@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import networkx as nx
 
 # Load the dataset
-edges_file = 'edges.csv'  # Replace with your file path
+edges_file = 'data/edges.csv'  # Replace with your file path
 edges_data = pd.read_csv(edges_file)
 
 # Create the graph
