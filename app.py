@@ -1,95 +1,71 @@
+import dash
+from dash import dcc, html
 import pandas as pd
-import requests
-import json
-import plotly.express as px
-from dash import Dash, dcc, html
-from dash.dependencies import Input, Output
+import plotly.graph_objects as go
+import networkx as nx
 
-# === Data Loading ===
+# Load the dataset
+edges_file = 'edges.csv'  # Replace with your file path
+edges_data = pd.read_csv(edges_file)
 
-# Load Main.csv dataset containing engagement data by country
-main_url = "https://raw.githubusercontent.com/AidaCPL/INFOSCI301_Final_Project/main/Data/Main.csv"
-df_main = pd.read_csv(main_url)
+# Create the graph
+G = nx.DiGraph()  # Directed graph
+for _, row in edges_data.iterrows():
+    G.add_edge(row['Source'], row['Target'], weight=row['Weight'], label=row['Label'])
 
-# Load Climate-FEVER dataset with climate misinformation claims and evidence
-climate_url = "https://raw.githubusercontent.com/AidaCPL/INFOSCI301_Final_Project/main/Data/climate-fever-dataset-r1.jsonl"
-climate_data = []
-response = requests.get(climate_url, stream=True)
-for line in response.iter_lines():
-    if line:
-        climate_data.append(json.loads(line))
-df_climate = pd.DataFrame(climate_data)
+# Extract node positions using a layout algorithm
+pos = nx.spring_layout(G, seed=42)  # Spring layout for visualization
+for node in G.nodes:
+    G.nodes[node]['pos'] = pos[node]
 
-# Load Politifact fake and real news datasets
-fake_url = "https://raw.githubusercontent.com/AidaCPL/INFOSCI301_Final_Project/main/Data/politifact_fake.csv"
-real_url = "https://raw.githubusercontent.com/AidaCPL/INFOSCI301_Final_Project/main/Data/politifact_real.csv"
-df_fake = pd.read_csv(fake_url)
-df_real = pd.read_csv(real_url)
+# Create edge traces for visualization
+edge_traces = []
+for edge in G.edges(data=True):
+    x0, y0 = G.nodes[edge[0]]['pos']
+    x1, y1 = G.nodes[edge[1]]['pos']
+    color = 'green' if edge[2]['label'] == 'SUPPORTS' else 'red'  # Color based on Label
+    edge_traces.append(
+        go.Scatter(
+            x=[x0, x1, None],
+            y=[y0, y1, None],
+            line=dict(width=edge[2]['weight'], color=color),
+            mode='lines'
+        )
+    )
 
-# === Data Processing ===
-
-# Compute average engagement levels per country
-df_engagement = df_main[['Country', 'political', 'science', 'business']].groupby('Country').mean().reset_index()
-
-# Add "type" column to distinguish fake and real news
-df_fake['type'] = 'Fake'
-df_real['type'] = 'Real'
-
-# Combine fake and real news datasets
-df_news = pd.concat([df_fake[['title', 'type']], df_real[['title', 'type']]])
-
-# Assign news articles to valid countries cyclically
-countries = df_engagement['Country'].tolist()
-df_news['Country'] = pd.Series(countries * (len(df_news) // len(countries) + 1))[:len(df_news)]
-
-# Merge engagement data with news types on the 'Country' column
-df_plot = df_engagement.merge(df_news, on='Country', how='inner')
-
-# Prepare data for visualization: Melt engagement columns
-df_melted = df_plot.melt(
-    id_vars=['Country', 'type', 'title'],  # Include news title and type
-    value_vars=['political', 'science', 'business'],  # Engagement types
-    var_name='Engagement Type',
-    value_name='Engagement Level'
+# Create node traces for visualization
+node_trace = go.Scatter(
+    x=[G.nodes[node]['pos'][0] for node in G.nodes],
+    y=[G.nodes[node]['pos'][1] for node in G.nodes],
+    text=[node for node in G.nodes],
+    mode='markers+text',
+    marker=dict(
+        size=10,
+        color='blue',
+        line=dict(width=2, color='black')
+    ),
+    textposition="top center"
 )
 
-# === Dash App Setup ===
+# Initialize Dash app
+app = dash.Dash(__name__)
 
-# Create a Dash app
-app = Dash(__name__)
-
-# Create a bar chart figure
-fig = px.bar(
-    df_melted,
-    x='Country',
-    y='Engagement Level',
-    color='Engagement Type',
-    barmode='group',
-    facet_col='type',
-    hover_data=['title'],
-    title='Engagement Levels Across Countries by News Type (Fake vs Real)',
-    labels={
-        'Engagement Level': 'Average Engagement Level',
-        'Country': 'Country',
-        'Engagement Type': 'Type of Engagement',
-        'type': 'News Type'
-    },
-    template='plotly_white'
-)
-
-fig.update_layout(
-    xaxis_title="Country",
-    yaxis_title="Engagement Level",
-    legend_title="Engagement Type",
-    title_x=0.5,
-    height=800,
-)
-
-# Layout for the app
-app.layout = html.Div(children=[
-    html.H1("Engagement Levels Across Countries", style={'text-align': 'center'}),
-    dcc.Graph(figure=fig)
+# Build the layout
+app.layout = html.Div([
+    html.H1("Network Graph Visualization", style={'text-align': 'center'}),
+    dcc.Graph(
+        id='network-graph',
+        figure=go.Figure(data=edge_traces + [node_trace])
+            .update_layout(
+                showlegend=False,
+                hovermode='closest',
+                margin=dict(b=0, l=0, r=0, t=0),
+                xaxis=dict(showgrid=False, zeroline=False),
+                yaxis=dict(showgrid=False, zeroline=False)
+            )
+    )
 ])
 
-if __name__ == "__main__":
+# Run the app
+if __name__ == '__main__':
     app.run_server(debug=True)
