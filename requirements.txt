@@ -34,4 +34,9 @@ dash
 plotly
 streamlit
 scipy
+pandas
+networkx
+pyvis
+streamlit
+
 
