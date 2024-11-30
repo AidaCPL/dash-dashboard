@@ -33,4 +33,5 @@ networkx
 dash
 plotly
 streamlit
+scipy
 
