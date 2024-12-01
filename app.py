@@ -182,5 +182,8 @@ def update_layout(selected_layout):
         layout['roots'] = '[id = "RootNode"]'  # Optionally specify a root node
     return layout
 
+import os
+
 if __name__ == "__main__":
-    app.run_server(debug=True, use_reloader=False)
+    port = int(os.environ.get("PORT", 8050))  # Use the PORT environment variable or default to 8050
+    app.run_server(host="0.0.0.0", port=port)  # Bind to 0.0.0.0 to make the app externally accessible
