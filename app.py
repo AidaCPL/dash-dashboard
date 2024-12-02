@@ -128,7 +128,7 @@ app.layout = html.Div([
     cyto.Cytoscape(
         id='network-graph',
         elements=supports_elements + refutes_elements,  # Combine elements
-        layout={'name': 'cose', 'nodeRepulsion': 8000, 'gravity': 0.25, 'idealEdgeLength': 50},  # Adjusted parameters
+        layout={'name': 'cose', 'nodeRepulsion': 100000, 'gravity': 0.8, 'idealEdgeLength': 50},  # Adjusted parameters
         style={'width': '100%', 'height': '800px'},
         stylesheet=[
             {
