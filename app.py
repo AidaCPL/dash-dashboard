@@ -3,11 +3,9 @@ import dash
 import dash_cytoscape as cyto
 from dash import html, dcc
 import networkx as nx
-from dash import Dash, dcc, html
-import pandas as pd
-import plotly.express as px
+import os
 
-# Load the dataset (update the path to match your local file location)
+# Load the dataset
 file_path = "data/edges_simplified_no_stopwords.csv"
 edges = pd.read_csv(file_path)
 
@@ -34,156 +32,127 @@ common_nodes = set(G_supports.nodes()).intersection(set(G_refutes.nodes()))
 def reassign_common_nodes(common_nodes, G_supports, G_refutes):
     reassigned_nodes = {}
     for node in common_nodes:
-        # Calculate total weight of edges connecting to SUPPORTS
-        supports_weight = sum(
-            data["weight"]
-            for neighbor, data in G_supports[node].items()
-            if neighbor in G_supports.nodes()
-        )
-        
-        # Calculate total weight of edges connecting to REFUTES
-        refutes_weight = sum(
-            data["weight"]
-            for neighbor, data in G_refutes[node].items()
-            if neighbor in G_refutes.nodes()
-        )
-        
-        # Assign to the class with the highest weight
-        if supports_weight >= refutes_weight:
-            reassigned_nodes[node] = "supports"
-        else:
-            reassigned_nodes[node] = "refutes"
-    
+        supports_weight = sum(data["weight"] for _, data in G_supports[node].items())
+        refutes_weight = sum(data["weight"] for _, data in G_refutes[node].items())
+        reassigned_nodes[node] = "supports" if supports_weight >= refutes_weight else "refutes"
     return reassigned_nodes
 
 # Reassign common nodes
 reassigned_nodes = reassign_common_nodes(common_nodes, G_supports, G_refutes)
 
-# Create Cytoscape elements with scaled node size and edge thickness
-def create_elements(graph, cluster_label, reassigned_nodes):
+# Create Cytoscape elements with adjusted node sizes
+def create_elements(graph, cluster_label, reassigned_nodes, scale_factor=1.0):
     elements = []
+    node_sizes = {}
 
     for node in graph.nodes():
-        # Check if the node is reassigned
         if node in reassigned_nodes:
             cluster_label = reassigned_nodes[node]
-        # Scale node size by its degree (or weighted degree)
-        node_size = sum(
-            data["weight"] for _, data in graph[node].items()
-        ) * 2  # Scaled multiplier
-        node_data = {
-            "id": node,
-            "label": node,
-            "group": cluster_label,
-            "size": max(10, node_size),  # Minimum size of 10 for visibility
-            "font_size": max(8, node_size // 2)  # Text size proportional to node size
-        }
-        elements.append({"data": node_data})
+        base_size = sum(data["weight"] for _, data in graph[node].items())
+        normalized_size = base_size ** 0.5 * 5  # Square root for less drastic differences, then scale
+        scaled_size = normalized_size * scale_factor  # Apply scaling
+        node_sizes[node] = normalized_size
+        elements.append({
+            "data": {
+                "id": node,
+                "label": node,
+                "group": cluster_label,
+                "base_size": normalized_size,  # Keep the original size static
+                "size": max(5, scaled_size)  # Scale size
+            }
+        })
 
-    # Add edges
     for source, target, data in graph.edges(data=True):
-        edge_thickness = data["weight"]  # Use weight directly for edge thickness
         elements.append({
             "data": {
                 "source": source,
                 "target": target,
-                "weight": data["weight"],
-                "width": edge_thickness,  # Edge width based on weight
-                "label": f"Weight: {data['weight']}"  # Hover text for edges
+                "weight": data["weight"]
             }
         })
 
     return elements
 
-# Generate elements for each cluster
+# Generate base elements for the Cytoscape graph
 supports_elements = create_elements(G_supports, "supports", reassigned_nodes)
 refutes_elements = create_elements(G_refutes, "refutes", reassigned_nodes)
-
-# Combine elements
-all_elements = supports_elements + refutes_elements
 
 # Dash app setup
 app = dash.Dash(__name__)
 
+# App layout
 app.layout = html.Div([
+    html.H1("Network Graph of most used words in Fake vs. Real Climate News", style={"textAlign": "center"}),
+
+    # Legend
     html.Div(
         children=[
-            html.H1("Interactive Network Graph", style={"textAlign": "center"}),
             html.P("Legend:"),
             html.Ul([
                 html.Li("Blue Nodes: SUPPORTS Cluster"),
                 html.Li("Red Nodes: REFUTES Cluster"),
                 html.Li("Node Size: Proportional to the weighted degree (importance)"),
-                html.Li("Text Size: Proportional to the node size"),
-                html.Li("Edge Thickness: Proportional to edge weight (strength of relationship)")
             ]),
-            html.Label("Choose Layout:"),
-            dcc.Dropdown(
-                id='layout-dropdown',
-                options=[
-                    {'label': 'Force-Directed (Cose)', 'value': 'cose'},
-                    {'label': 'Hierarchical (Breadthfirst)', 'value': 'breadthfirst'}
-                ],
-                value='cose',  # Default layout
-                clearable=False,
-                style={'width': '300px', 'marginBottom': '10px'}
-            )
         ],
         style={"padding": "10px", "border": "1px solid black", "marginBottom": "10px"}
     ),
+
+    # Dropdown to change node layout
+    html.Label("Choose Layout:"),
+    dcc.Dropdown(
+        id='layout-dropdown',
+        options=[
+            {'label': 'Force-Directed (Cose)', 'value': 'cose'},
+            {'label': 'Hierarchical (Breadthfirst)', 'value': 'breadthfirst'}
+        ],
+        value='cose',  # Default layout
+        style={'width': '300px', 'marginBottom': '10px'}
+    ),
+
+    # Slider to scale node sizes
+    html.Label("Adjust Node Size:"),
+    dcc.Slider(
+        id='node-size-slider',
+        min=0.5,
+        max=3,
+        step=0.1,
+        value=1.0,
+        marks={i: str(i) for i in range(1, 4)},
+        tooltip={"placement": "bottom", "always_visible": True},
+    ),
+
+    # Cytoscape graph
     cyto.Cytoscape(
         id='network-graph',
-        elements=all_elements,
-        layout={'name': 'cose'},  # Default layout
+        elements=supports_elements + refutes_elements,  # Combine elements
+        layout={'name': 'cose'},
         style={'width': '100%', 'height': '800px'},
         stylesheet=[
-            # Style nodes
-            {
-                "selector": "node[group='supports']",
-                "style": {
-                    "background-color": "blue",
-                    "label": "data(label)",
-                    "width": "data(size)",
-                    "height": "data(size)",
-                    "font-size": "data(font_size)"  # Text size proportional to node size
-                }
-            },
-            {
-                "selector": "node[group='refutes']",
-                "style": {
-                    "background-color": "red",
-                    "label": "data(label)",
-                    "width": "data(size)",
-                    "height": "data(size)",
-                    "font-size": "data(font_size)"  # Text size proportional to node size
-                }
-            },
-            # Style edges
-            {
-                "selector": "edge",
-                "style": {
-                    "line-color": "gray",
-                    "width": "data(width)",
-                    "target-arrow-shape": "triangle",
-                }
-            },
+            {"selector": "node[group='supports']", "style": {"background-color": "blue", "shape": "ellipse", "width": "data(size)", "height": "data(size)"}},
+            {"selector": "node[group='refutes']", "style": {"background-color": "red", "shape": "triangle", "width": "data(size)", "height": "data(size)"}},
+            {"selector": "edge", "style": {"line-color": "gray", "width": 2, "target-arrow-shape": "triangle"}}
         ]
     )
 ])
 
-# Update layout dynamically
+# Callback to update layout dynamically
 @app.callback(
     dash.dependencies.Output('network-graph', 'layout'),
     [dash.dependencies.Input('layout-dropdown', 'value')]
 )
 def update_layout(selected_layout):
-    layout = {'name': selected_layout}
-    if selected_layout == 'breadthfirst':
-        layout['roots'] = '[id = "RootNode"]'  # Optionally specify a root node
-    return layout
+    return {'name': selected_layout}
 
-import os
+# Callback to adjust node sizes based on the slider
+@app.callback(
+    dash.dependencies.Output('network-graph', 'elements'),
+    [dash.dependencies.Input('node-size-slider', 'value')]
+)
+def update_node_sizes(scale_factor):
+    supports_elements = create_elements(G_supports, "supports", reassigned_nodes, scale_factor)
+    refutes_elements = create_elements(G_refutes, "refutes", reassigned_nodes, scale_factor)
+    return supports_elements + refutes_elements
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8050))  # Use the PORT environment variable or default to 8050
-    app.run_server(host="0.0.0.0", port=port)  # Bind to 0.0.0.0 to make the app externally accessible
+    port = int(os.environ.get("PORT", 8050))
+    app.run_server(host="0.0.0.0", port=port)
