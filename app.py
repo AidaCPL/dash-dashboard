@@ -40,7 +40,7 @@ def reassign_common_nodes(common_nodes, G_supports, G_refutes):
 # Reassign common nodes
 reassigned_nodes = reassign_common_nodes(common_nodes, G_supports, G_refutes)
 
-# Create Cytoscape elements with adjusted node sizes
+# Create Cytoscape elements with adjusted node and font sizes
 def create_elements(graph, cluster_label, reassigned_nodes, scale_factor=1.0):
     elements = []
     node_sizes = {}
@@ -51,14 +51,16 @@ def create_elements(graph, cluster_label, reassigned_nodes, scale_factor=1.0):
         base_size = sum(data["weight"] for _, data in graph[node].items())
         normalized_size = base_size ** 0.5 * 5  # Square root for less drastic differences, then scale
         scaled_size = normalized_size * scale_factor  # Apply scaling
+        font_size = max(4, scaled_size // 3)  # Adjust font size proportionally
         node_sizes[node] = normalized_size
         elements.append({
             "data": {
                 "id": node,
-                "label": node,
+                "label": node,  # Ensure the label remains attached
                 "group": cluster_label,
                 "base_size": normalized_size,  # Keep the original size static
-                "size": max(5, scaled_size)  # Scale size
+                "size": max(2, scaled_size),  # Allow smaller nodes for better scaling
+                "font_size": font_size  # Add font size for labels
             }
         })
 
@@ -92,6 +94,7 @@ app.layout = html.Div([
                 html.Li("Blue Nodes: SUPPORTS Cluster"),
                 html.Li("Red Nodes: REFUTES Cluster"),
                 html.Li("Node Size: Proportional to the weighted degree (importance)"),
+                html.Li("Font Size: Proportional to node size")
             ]),
         ],
         style={"padding": "10px", "border": "1px solid black", "marginBottom": "10px"}
@@ -125,11 +128,31 @@ app.layout = html.Div([
     cyto.Cytoscape(
         id='network-graph',
         elements=supports_elements + refutes_elements,  # Combine elements
-        layout={'name': 'cose'},
+        layout={'name': 'cose', 'nodeRepulsion': 8000, 'gravity': 0.25, 'idealEdgeLength': 50},  # Adjusted parameters
         style={'width': '100%', 'height': '800px'},
         stylesheet=[
-            {"selector": "node[group='supports']", "style": {"background-color": "blue", "shape": "ellipse", "width": "data(size)", "height": "data(size)"}},
-            {"selector": "node[group='refutes']", "style": {"background-color": "red", "shape": "triangle", "width": "data(size)", "height": "data(size)"}},
+            {
+                "selector": "node[group='supports']",
+                "style": {
+                    "background-color": "blue",
+                    "shape": "ellipse",
+                    "width": "data(size)",
+                    "height": "data(size)",
+                    "label": "data(label)",
+                    "font-size": "data(font_size)"  # Font size scales with node size
+                }
+            },
+            {
+                "selector": "node[group='refutes']",
+                "style": {
+                    "background-color": "red",
+                    "shape": "ellipse",
+                    "width": "data(size)",
+                    "height": "data(size)",
+                    "label": "data(label)",
+                    "font-size": "data(font_size)"  # Font size scales with node size
+                }
+            },
             {"selector": "edge", "style": {"line-color": "gray", "width": 2, "target-arrow-shape": "triangle"}}
         ]
     )
@@ -141,9 +164,11 @@ app.layout = html.Div([
     [dash.dependencies.Input('layout-dropdown', 'value')]
 )
 def update_layout(selected_layout):
+    if selected_layout == 'cose':
+        return {'name': 'cose', 'nodeRepulsion': 8000, 'gravity': 0.25, 'idealEdgeLength': 50}
     return {'name': selected_layout}
 
-# Callback to adjust node sizes based on the slider
+# Callback to adjust node and font sizes based on the slider
 @app.callback(
     dash.dependencies.Output('network-graph', 'elements'),
     [dash.dependencies.Input('node-size-slider', 'value')]
