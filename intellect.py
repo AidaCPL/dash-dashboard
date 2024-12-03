@@ -1,11 +1,11 @@
+import os
 import dash
 from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
 import pandas as pd
 
 # Load your data
-main_data =  pd.read_csv('https://raw.githubusercontent.com/AidaCPL/INFOSCI301_Final_Project/refs/heads/main/Data/Main.csv')
-
+main_data = pd.read_csv('https://raw.githubusercontent.com/AidaCPL/INFOSCI301_Final_Project/refs/heads/main/Data/Main.csv')
 
 # Check column names
 print(main_data.columns)
@@ -27,6 +27,7 @@ social_media_options = {
 
 # Initialize Dash app
 app = dash.Dash(__name__)
+server = app.server  # Required for Render deployment
 
 app.layout = html.Div([
     html.Label("Social Media:"),
@@ -94,4 +95,6 @@ def update_plot(social_media_column):
         return go.Figure()  # Return an empty figure if there's an error
 
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    # Use the PORT environment variable assigned by Render
+    port = int(os.environ.get("PORT", 8080))
+    app.run_server(host="0.0.0.0", port=port, debug=False)
